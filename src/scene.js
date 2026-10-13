@@ -44,15 +44,120 @@ function environment(m,type){let lobby=type==='lobby',forest=type==='xsuit';m.bo
  for(let i=-4;i<=4;i++)m.cone([i*5,1,-30-Math.abs(i)*2],7,0,8+(i%3)*2,'#75868b',5);
  }else{m.cone([0,-.005,0],2.8,2.8,.04,'#444f5e',64);for(let s of [-1,1]){m.box([s*5,2.7,-4],[.15,5.5,4],'#354151');m.box([s*3.8,3.5,-4],[2.6,.03,.12],forest?'#b1d586':'#668fbc');}m.box([0,2.5,-6],[14,5,.2],forest?'#2a4941':'#29333f');}}
 export class Scene {
- constructor(canvas){this.canvas=canvas;this.gl=canvas.getContext('webgl',{antialias:true,alpha:false});this.angle=-.18;this.zoom=1;this.options={type:'lobby'};this.dirty=true;this.drag=null;this.motion=true;this.last=0;if(!this.gl){canvas.insertAdjacentHTML('afterend','<div class="webgl-fallback">3D preview requires WebGL. Menus remain available.</div>');return;}let gl=this.gl;
- const shader=(type,source)=>{let s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};let pr=gl.createProgram();gl.attachShader(pr,shader(gl.VERTEX_SHADER,'attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;uniform mat4 uVP;varying vec3 vColor;varying float vFog;void main(){gl_Position=uVP*vec4(aPos,1.);float light=.42+.48*max(dot(normalize(aNormal),normalize(vec3(-.5,1.,.7))),0.)+.16*max(dot(normalize(aNormal),normalize(vec3(.8,.3,-.8))),0.);vColor=aColor*light;vFog=clamp((gl_Position.w-12.)/45.,0.,.75);}'));gl.attachShader(pr,shader(gl.FRAGMENT_SHADER,'precision mediump float;varying vec3 vColor;varying float vFog;uniform vec3 uSky;void main(){gl_FragColor=vec4(mix(vColor,uSky,vFog),1.);}'));gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(pr));gl.useProgram(pr);this.pr=pr;this.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);for(let [i,name] of ['aPos','aNormal','aColor'].entries()){let loc=gl.getAttribLocation(pr,name);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,36,i*12);}this.vp=gl.getUniformLocation(pr,'uVP');this.sky=gl.getUniformLocation(pr,'uSky');gl.enable(gl.DEPTH_TEST);
- canvas.addEventListener('pointerdown',e=>{this.drag={x:e.clientX,angle:this.angle};canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(this.drag){this.angle=this.drag.angle+(e.clientX-this.drag.x)*.008;this.dirty=true;}});for(let ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,()=>this.drag=null);canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.75,Math.min(1.45,this.zoom+e.deltaY*.0006));this.dirty=true},{passive:false});window.addEventListener('resize',()=>this.dirty=true);this.frame=this.frame.bind(this);requestAnimationFrame(this.frame);
+ constructor(canvas){
+  this.canvas=canvas;this.gl=canvas.getContext('webgl',{antialias:true,alpha:false});
+  this.options={type:'lobby'};this.angle=-.18;this.zoom=1;this.dirty=true;this.last=0;this.raf=0;this.lost=false;
+  this.pointers=new Map();this.environmentCache=new Map();this.modelKey='';this.backgroundKey='';this.listeners=[];
+  this.frame=this.frame.bind(this);this.onVisibility=()=>{if(document.hidden)this.stop();else this.wake();};
+  this.onResize=()=>this.wake();
+  if(!this.gl){this.fallback('3D preview requires WebGL. Menus remain available.');return;}
+  this.initialize();
+  const listen=(event,fn,options)=>{canvas.addEventListener(event,fn,options);this.listeners.push([event,fn,options]);};
+  listen('pointerdown',event=>{
+   this.pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});canvas.setPointerCapture?.(event.pointerId);
+   this.anchorGesture();
+  });
+  listen('pointermove',event=>{
+   if(!this.pointers.has(event.pointerId))return;
+   this.pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+   const points=[...this.pointers.values()];
+   if(points.length>=2){
+    const distance=Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y);
+    if(this.pinchDistance>0)this.zoom=Math.max(.65,Math.min(1.65,this.pinchZoom*this.pinchDistance/Math.max(1,distance)));
+   }else if(this.drag)this.angle=this.drag.angle+(event.clientX-this.drag.x)*.008;
+   this.wake();
+  });
+  const release=event=>{this.pointers.delete(event.pointerId);this.anchorGesture();};
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])listen(event,release);
+  listen('wheel',event=>{event.preventDefault();this.zoom=Math.max(.65,Math.min(1.65,this.zoom+event.deltaY*.0006));this.wake();},{passive:false});
+  listen('dblclick',()=>{this.angle=this.options.type==='vehicle'?.65:-.18;this.zoom=1;this.wake();});
+  listen('webglcontextlost',event=>{event.preventDefault();this.lost=true;this.stop();this.fallback('3D renderer reconnecting…');});
+  listen('webglcontextrestored',()=>{
+   try{this.initialize();this.lost=false;this.fallbackNode?.remove();this.fallbackNode=null;this.wake();}
+   catch(error){this.lost=true;this.fallback('3D preview unavailable. Reload to reconnect.');console.error(error);}
+  });
+  window.addEventListener('resize',this.onResize);document.addEventListener?.('visibilitychange',this.onVisibility);
+  if(typeof ResizeObserver!=='undefined'){this.observer=new ResizeObserver(this.onResize);this.observer.observe(canvas);}
+  this.wake();
  }
- set(options){if(this.options.type!==options.type){this.angle=options.type==='vehicle'?.65:-.18;this.zoom=1;}this.options=options;this.motion=options.motion!==false;this.dirty=true;}
- frame(now){requestAnimationFrame(this.frame);if(document.hidden||this.options.hidden||(!this.dirty&&(!this.motion||now-this.last<65)))return;this.last=now;this.dirty=false;let gl=this.gl,c=this.canvas,o=this.options,dpr=Math.min(window.devicePixelRatio||1,o.quality==='low'?1:1.7);let w=Math.round(c.clientWidth*dpr),h=Math.round(c.clientHeight*dpr);if(c.width!==w||c.height!==h){c.width=w;c.height=h;}gl.viewport(0,0,w,h);let sky=o.type==='lobby'?[.39,.47,.52]:o.type==='xsuit'?[.16,.26,.24]:[.085,.12,.17];gl.clearColor(...sky,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);let m=new Mesh();environment(m,o.type);let sway=this.motion?Math.sin(now*.0005)*.018:0;m.turn=this.angle+sway;
- if(o.type==='vehicle')vehicle(m,o);else if(o.type==='lab'){m.origin=[0,1.3,0];rifle(m,[0,0,0],o.weaponColor,1.65);if(o.stage>=3){m.origin=[0,0,0];m.cone([0,.02,0],1.9,1.9,.04,'#b99852',40);}}
- else{avatar(m,{...o,suit:o.type==='xsuit'},now);if(o.type==='lobby'){m.origin=[-1.7,0,-.2];m.turn=.75;vehicle(m,{vehicle:'buggy'});}if(o.companion&&o.companion!=='none'){m.origin=[.8,0,.3];m.turn=this.angle;pet(m,o.companion);}}
- let distance=(o.type==='lobby'?5.8:o.type==='vehicle'?5.9:o.type==='lab'?6.2:5)*this.zoom;let aspect=w/Math.max(1,h);distance*=Math.max(1,.95/aspect);let targetX=aspect<1?0:o.type==='lobby'?.25:.55; // Offset models left to leave room for panels.
- gl.uniformMatrix4fv(this.vp,false,camera([targetX,2.25,distance],[targetX,1.23,0],aspect));gl.uniform3fv(this.sky,sky);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.data),gl.DYNAMIC_DRAW);gl.drawArrays(gl.TRIANGLES,0,m.data.length/9);
+ fallback(message){
+  if(!this.fallbackNode&&document.createElement){this.fallbackNode=document.createElement('div');this.fallbackNode.className='webgl-fallback';this.fallbackNode.setAttribute('role','status');this.canvas.after?.(this.fallbackNode);}
+  if(this.fallbackNode)this.fallbackNode.textContent=message;
+ }
+ initialize(){
+  const gl=this.gl;
+  const shader=(type,source)=>{const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
+  const vertex=shader(gl.VERTEX_SHADER,`attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;uniform mat4 uVP;uniform float uTurn;uniform vec3 uSky;varying vec3 vColor;varying float vFog;void main(){float c=cos(uTurn),s=sin(uTurn);mat3 r=mat3(c,0.,-s,0.,1.,0.,s,0.,c);vec3 p=r*aPos;vec3 normal=r*aNormal;gl_Position=uVP*vec4(p,1.);float light=.42+.48*max(dot(normalize(normal),normalize(vec3(-.5,1.,.7))),0.)+.16*max(dot(normalize(normal),normalize(vec3(.8,.3,-.8))),0.);vColor=aColor*light;vFog=clamp((gl_Position.w-12.)/45.,0.,.75);}`);
+  const fragment=shader(gl.FRAGMENT_SHADER,'precision mediump float;varying vec3 vColor;varying float vFog;uniform vec3 uSky;void main(){gl_FragColor=vec4(mix(vColor,uSky,vFog),1.);}');
+  const pr=gl.createProgram();gl.attachShader(pr,vertex);gl.attachShader(pr,fragment);gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(pr));
+  gl.deleteShader(vertex);gl.deleteShader(fragment);gl.useProgram(pr);this.pr=pr;
+  this.attributes=['aPos','aNormal','aColor'].map(name=>gl.getAttribLocation(pr,name));
+  this.vp=gl.getUniformLocation(pr,'uVP');this.sky=gl.getUniformLocation(pr,'uSky');this.turn=gl.getUniformLocation(pr,'uTurn');
+  this.backgroundBuffer=gl.createBuffer();this.modelBuffer=gl.createBuffer();this.backgroundKey='';this.modelKey='';
+  gl.enable(gl.DEPTH_TEST);
+ }
+ anchorGesture(){
+  const points=[...this.pointers.values()];
+  if(points.length>=2){this.pinchDistance=Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y);this.pinchZoom=this.zoom;this.drag=null;}
+  else{this.pinchDistance=0;this.drag=points[0]?{x:points[0].x,angle:this.angle}:null;}
+ }
+ active(){return Boolean(this.gl)&&!this.lost&&!document.hidden&&!this.options.hidden&&!this.options.paused;}
+ stop(){if(this.raf){globalThis.cancelAnimationFrame?.(this.raf);this.raf=0;}}
+ wake(){this.dirty=true;if(this.active()&&!this.raf)this.raf=requestAnimationFrame(this.frame);}
+ set(options){
+  if(this.options.type!==options.type){this.angle=options.type==='vehicle'?.65:-.18;this.zoom=1;this.pointers.clear();this.drag=null;}
+  this.options=options;this.motion=options.motion!==false && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if(this.active())this.wake();else this.stop();
+ }
+ bind(buffer){
+  const gl=this.gl;gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+  this.attributes.forEach((loc,index)=>{if(loc>=0){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,36,index*12);}});
+ }
+ geometry(){
+  const gl=this.gl,o=this.options;
+  if(this.backgroundKey!==o.type){
+   let data=this.environmentCache.get(o.type);
+   if(!data){const mesh=new Mesh();environment(mesh,o.type);data=new Float32Array(mesh.data);this.environmentCache.set(o.type,data);}
+   gl.bindBuffer(gl.ARRAY_BUFFER,this.backgroundBuffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);this.backgroundCount=data.length/9;this.backgroundKey=o.type;
+  }
+  const key=JSON.stringify([o.type,o.color,o.accent,o.character,o.weaponColor,o.vehicle,o.companion,o.stage]);
+  if(this.modelKey===key)return;
+  const m=new Mesh();
+  if(o.type==='vehicle')vehicle(m,o);
+  else if(o.type==='lab'){
+   m.origin=[0,1.3,0];rifle(m,[0,0,0],o.weaponColor,1.65);
+   if(o.stage>=3){m.origin=[0,0,0];m.cone([0,.02,0],1.9,1.9,.04,'#b99852',40);}
+  }else{
+   avatar(m,{...o,suit:o.type==='xsuit'},0);
+   if(o.type==='lobby'){m.origin=[-1.7,0,-.2];m.turn=.75;vehicle(m,{vehicle:'buggy'});}
+   if(o.companion&&o.companion!=='none'){m.origin=[.8,0,.3];m.turn=0;pet(m,o.companion);}
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,this.modelBuffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.data),gl.STATIC_DRAW);this.modelCount=m.data.length/9;this.modelKey=key;
+ }
+ frame(now){
+  this.raf=0;if(!this.active())return;
+  const motion=this.motion!==false;
+  if(!this.dirty && (!motion || now-this.last<33)){if(motion)this.raf=requestAnimationFrame(this.frame);return;}
+  const gl=this.gl,c=this.canvas,o=this.options;
+  if(c.clientWidth<=0||c.clientHeight<=0)return;
+  this.last=now;this.dirty=false;
+  const dpr=Math.min(window.devicePixelRatio||1,o.quality==='low'?1:1.7);
+  const w=Math.max(1,Math.round(c.clientWidth*dpr)),h=Math.max(1,Math.round(c.clientHeight*dpr));
+  if(c.width!==w||c.height!==h){c.width=w;c.height=h;}gl.viewport(0,0,w,h);
+  const sky=o.type==='lobby'?[.39,.47,.52]:o.type==='xsuit'?[.16,.26,.24]:[.085,.12,.17];
+  gl.clearColor(...sky,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.pr);this.geometry();
+  let distance=(o.type==='lobby'?5.8:o.type==='vehicle'?5.9:o.type==='lab'?6.2:5)*this.zoom;
+  const aspect=w/h;distance*=Math.max(1,.95/aspect);const targetX=aspect<1?0:o.type==='lobby'?.25:.55;
+  gl.uniformMatrix4fv(this.vp,false,camera([targetX,2.25,distance],[targetX,1.23,0],aspect));gl.uniform3fv(this.sky,sky);
+  this.bind(this.backgroundBuffer);gl.uniform1f(this.turn,0);gl.drawArrays(gl.TRIANGLES,0,this.backgroundCount);
+  this.bind(this.modelBuffer);gl.uniform1f(this.turn,this.angle+(motion?Math.sin(now*.0005)*.018:0));gl.drawArrays(gl.TRIANGLES,0,this.modelCount);
+  if(motion)this.raf=requestAnimationFrame(this.frame);
+ }
+ destroy(){
+  this.stop();this.observer?.disconnect();for(const [event,fn,options] of this.listeners)this.canvas.removeEventListener?.(event,fn,options);
+  window.removeEventListener?.('resize',this.onResize);document.removeEventListener?.('visibilitychange',this.onVisibility);
+  if(this.gl&&!this.lost){this.gl.deleteBuffer(this.backgroundBuffer);this.gl.deleteBuffer(this.modelBuffer);this.gl.deleteProgram(this.pr);}
+  this.fallbackNode?.remove();this.pointers.clear();this.environmentCache.clear();
  }
 }

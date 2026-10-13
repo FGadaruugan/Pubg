@@ -1,72 +1,183 @@
-import {outfits,characters,weapons,vehicles,companions,collections,opmNames,labStages,suitStages,goals,rankName,catalogs} from './catalog.js';
-import {fresh,load,save,equipItem,setGoal,openPack,progress} from './model.js';
+import {outfits,weapons,vehicles,catalogs} from './catalog.js';
+import {createStore} from './store.js';
+import {createRouter} from './router.js';
+import {renderScreens,inventoryGrid} from './screens.js';
+import {icon} from './icons.js';
 import {Scene} from './scene.js';
+
 const app=document.querySelector('#app');
-let storage;try{storage=window.localStorage;}catch{storage={getItem:()=>null,setItem:()=>{throw Error('Storage unavailable')}};}
-let state=load(storage),view='lobby',workshop=false,tab='outfit',preview=state.equipped.outfit,stage=0,season='classic',profile='basic',collection='opm',search='',owned=false,sort='quality',modal=null,reveal=null;
-const scene=new Scene(document.querySelector('#scene'));
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const btn=(label,action,value='',cls='')=>`<button class="${cls}" data-action="${action}" data-value="${esc(value)}">${label}</button>`;
-const art=(file,rect,cls='')=>rect?`<svg class="art ${cls}" viewBox="${rect.join(' ')}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><image href="assets/reference/${file}.jpg" width="1536" height="681"/></svg>`:'';
-const badge=(points,cls='')=>`<div class="rank-badge ${cls}"><span>✦</span><b>${points>=4200?'♛':'⚔'}</b><small>${esc(rankName(points).split(' ').at(-1))}</small></div>`;
-const header=(title,extra='')=>`<header class="screen-header"><h1>${title}</h1><div>${extra}<span class="demo">LOCAL PROTOTYPE</span>${btn('×','back','','close')}</div></header>`;
-const rail=(items,current,action)=>`<nav class="rail">${items.map(([id,label])=>btn(label,action,id,id===current?'active':'')).join('')}</nav>`;
-const hint='<div class="orbit-hint">↔ Drag to rotate · Scroll to zoom</div>';
-function persist(){if(!save(state,storage))toast('Энэ browser-д хадгалах боломжгүй. Сонголт одоогийн session-д үлдэнэ.');}
-function toast(text){let t=document.querySelector('#toast');t.textContent=text;t.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('show'),3600);}
-function navigate(next){view=next;modal=null;search='';owned=false;stage=0;workshop=false;if(next==='inventory'){tab='outfit';preview=state.equipped.outfit;}if(next==='character')preview=state.equipped.character;if(next==='vehicle')preview=state.equipped.vehicle;if(next==='lab')preview='nature';if(next==='companion')preview='kitten';render();}
-function lobby(){return `<div class="lobby"><div class="identity">${btn('<span class="avatar-icon">♛</span><span><b>'+esc(state.name)+'</b><small>Lv. 41 · Aspiring Collector</small></span>','nav','profile','player')}${btn('◈ Coll. 24','nav','cards','glass')}${btn('⌂ Home','info','Home is outside this lobby prototype.','glass')}</div><div class="top-money">${btn('♛ PRIME','info','Local prototype · purchases are not connected.')}<span>G <b>303</b></span><span>UC <b>8</b></span>${btn('⚙','settings','','icon')}</div><div class="left-dock">${btn('♟<small>0 / 25</small>','info','Friends require a connected game service.')}${btn('✦','nav','season')}${btn('⚡','nav','shop')}</div><aside class="promos">${btn('<span class="eyebrow">COLLECTION</span><strong>ONE-PUNCH<br>MAN</strong><span class="promo-bottom">Prize Path <b>↗</b></span>','nav','cards','promo')}${btn('▣ CRATES　　🛒 SHOP','nav','shop','yellow')}${btn('<b>RP</b>　Season rewards →','nav','season','promo-strip')}${btn('Events <span>→</span>','nav','shop','promo-strip')}</aside><div class="start-area"><label class="language"><input type="checkbox"> Match by language</label><div class="challenge">BRAINROT CHALLENGE <span>✦</span></div>${btn('<small>TPP ♟ 4</small><b>Classic · Ranked</b><span>Erangel　⌄</span>','modes','','mode-tile')}${btn('START','modes','','start')}</div><div class="lobby-caption"><span>3D SHOWROOM</span>Procedural models · reference-inspired interface</div><footer class="lobby-footer"><div class="chat">◇ Welcome to the battleground　<span>Local demo · no live match</span></div>${workshop?`<div class="workshop-menu">${[['xsuit','✧ X-Suit'],['lab','⚙ The Lab'],['vehicle','▰ Vehicles'],['companion','♣ Companions'],['character','♟ Character']].map(([id,l])=>btn(l,'nav',id)).join('')}</div>`:''}<nav>${btn('THEME','nav','shop')}${btn('S32 / SEASON','nav','season')}${btn('WORKSHOP','workshop','',workshop?'selected':'')}${btn('CARDS','nav','cards')}${btn('INVENTORY','nav','inventory')}${btn('⌃','settings','','icon')}</nav></footer><div class="connection">● Asia HD <span>WEBGL · LOCAL SAVE</span></div></div>`;}
-function inventory(){let list=catalogs[tab]||outfits;list=list.filter(x=>(!owned||x.owned)&&x.name.toLowerCase().includes(search.toLowerCase()));if(sort==='name')list=[...list].sort((a,b)=>a.name.localeCompare(b.name));let p=(catalogs[tab]||outfits).find(x=>x.id===preview);return `${header('INVENTORY')}<div class="preview-label"><span>${p?.owned?'OWNED':'PREVIEW · LOCKED'}</span><h2>${esc(p?.name||'Select an item')}</h2>${hint}</div><section class="inventory-panel"><div class="tabs">${btn('OUTFITS','inventory-tab','outfit',tab==='outfit'?'active':'')}${btn('LOOKS','looks','','')}</div><div class="filters"><input id="search" aria-label="Search inventory" placeholder="⌕ Search" value="${esc(search)}"><select id="sort" aria-label="Sort items"><option value="quality" ${sort==='quality'?'selected':''}>By quality</option><option value="name" ${sort==='name'?'selected':''}>By name</option></select><label><input id="owned" type="checkbox" ${owned?'checked':''}> Owned</label></div><div class="item-grid">${list.map(x=>btn(`${art(tab==='outfit'?'inventory':tab==='character'?'characters':'lab',x.rect)}<span class="item-mark">${state.equipped[tab]===x.id?'✓':x.owned?'':'▣'}</span><span class="item-title">${esc(x.name)}</span>`,'preview',x.id,`item ${preview===x.id?'selected':''} ${x.quality==='Mythic'?'mythic':''}`)).join('')||'<p class="empty">No matching items.</p>'}</div><div class="panel-bottom">${btn(p?.owned?'EQUIP':'LOCKED · PREVIEW ONLY','equip',`${tab}:${preview}`,'yellow')}${btn('Save Look','save-look','','outline')}</div></section>${rail([['outfit','♟ Outfits'],['weapon','⚔ Weapons'],['character','◉ Character']],tab,'inventory-tab')}`;}
-function cardFace(c,index){let file=c.id==='opm'?'cards':'collections';let rect=c.id==='opm'?[202+(index%4)*254,130+Math.floor((index%8)/4)*261,220,221]:c.rect;return art(file,rect);}
-function cards(){let c=collections.find(x=>x.id===collection);if(tab!=='detail')return `<div class="light-page">${header('CARD COLLECTION',`<span class="balance">▣ ${state.packs} packs</span>`)}<div class="page-kicker">COLLECT THE MOMENTS <span>Local sample collection · progress saves on this device</span></div><section class="collection-grid">${collections.map(c=>btn(`${art('collections',c.rect)}<div><h2>${c.name}</h2><p>${progress(state,c.id)} / ${c.total} collected　→</p></div>`,'collection',c.id,'collection-cover')).join('')}</section><div class="collection-footer"><div><b>${Object.keys(state.cards).length} / 54</b><small>Cards collected</small></div><div class="milestones">${[9,18,30,42,54].map(n=>`<span class="${Object.keys(state.cards).length>=n?'earned':''}">◇<small>${n}</small></span>`).join('')}</div>${btn('Open sample pack','open-pack',collection,'yellow')}${btn('Pack info','info','Each local sample pack draws 3 cards. Duplicates are counted. These are not real PUBG cards.','outline')}</div></div>`;
- return `<div class="light-page">${header(c.name,`<span class="balance">▣ ${state.packs} sample packs</span>`)}<div class="card-toolbar">${btn('← All collections','card-overview','','outline')}<span>Collected ${progress(state,c.id)} / ${c.total}</span><span class="demo">DEMO · NO ONLINE TRADING</span></div><section class="cards-grid">${Array.from({length:c.total},(_,i)=>{let n=state.cards[`${c.id}-${i}`]||0;return btn(`${cardFace(c,i)}<span class="card-number">${n?'×'+n:'▣'}</span><strong>${c.id==='opm'?opmNames[i]:c.name+' '+(i+1)}</strong>`,'card-info',`${c.id}-${i}`,`collectible ${n?'owned':'locked'}`)}).join('')}</section>${rail(collections.map(c=>[c.id,c.name]),collection,'collection')}<div class="card-bottom"><span>Collect ${c.total} unique cards to complete this local set.</span>${btn('Source','info','Open a sample pack below. Live events, trading and redemption are not connected.','outline')}${btn('Open pack · '+state.packs,'open-pack',c.id,'yellow')}</div></div>`;}
-function workshopPage(){let kind=view==='lab'?'weapon':view==='xsuit'?'outfit':view;let list=catalogs[kind]||outfits;let selected=list.find(x=>x.id===preview)||list[0];let title=view==='lab'?'THE LAB':view==='xsuit'?'X-SUIT':view.toUpperCase();if(view==='xsuit')selected={name:'Verdant Druvaen X-Suit',owned:false};let stages=view==='lab'?labStages:view==='xsuit'?suitStages:view==='vehicle'?['Basic Form','Advanced Form','Elimination Broadcast','Final Form']:[];
- return `${header(title)}<div class="showroom-title"><h2>${esc(selected.name)}</h2><p>${selected.owned?'OWNED · LOCAL STARTER':'LOCKED · PREVIEW'} ${stages.length?'　Progress '+(selected.owned?'1':'0')+' / '+stages.length:''}</p></div>${stages.length?`<nav class="stage-list">${stages.map((l,i)=>btn(`<span>${selected.owned&&i===0?'✓':'♧'}</span>${l}`,'stage',i,i===stage?'active':'')).join('')}<div class="stage-detail">${view==='lab'?['Base weapon appearance','Elimination visual preview','Enhanced appearance preview','Elimination broadcast preview','Hit effect preview','Final appearance preview','Loot crate preview'][stage]:'Visual preview · unlocks are not available in this prototype.'}</div></nav>`:''}${view==='character'?btn('♟ Switch character','roster','','switch-character'):''}${view==='companion'?`<div class="companion-slots"><small>Bring</small>${btn('+','roster')}<small>Carry</small>${btn('+','info','Carry slots require an owned companion.')}${btn('+','info','Carry slots require an owned companion.')}</div>`:''}<aside class="showroom-catalog"><div class="tabs">${view==='xsuit'?'<b>FORMS</b>':'<b>COLLECTION</b>'}</div>${view==='xsuit'?['Verdant','Pyre','Frost'].map((x,i)=>btn(`<span class="swatch form-${i}"></span>${x} Form`,'form',i,stage===i?'selected':'')).join(''):list.map(x=>btn(`${x.rect?art(view==='character'?'characters':view==='companion'?'companions':view==='vehicle'?'vehicles':'lab',x.rect):'<span class="object-symbol">'+(view==='vehicle'?'▰':'◉')+'</span>'}<span>${esc(x.name)}</span><small>${x.owned?'✓ Owned':x.ended?'Event has ended':'▣ Locked'}</small>`,'preview',x.id,preview===x.id?'selected':'')).join('')}</aside><div class="showroom-bottom"><div>${hint}<strong>${esc(stages[stage]||selected.name)}</strong><small>${selected.owned?'Select to use this local starter item.':'Preview does not grant ownership.'}</small></div>${btn(selected.owned?'USE':'HOW TO OBTAIN',selected.owned?'equip':'info',selected.owned?`${kind}:${selected.id}`:'This item is a visual reference. Real purchases and unlocks require the official game.', 'yellow')}</div>${view==='lab'&&stage===3?'<div class="effect-banner">✦ ELIMINATION BROADCAST ✦<small>Visual sample</small></div>':''}${view==='lab'&&stage===4?'<div class="effect-target">◎<small>HIT EFFECT PREVIEW</small></div>':''}${view==='lab'&&stage===6?'<div class="effect-banner">▣ LOOT CRATE<small>Preview placeholder · original model unavailable</small></div>':''}`;}
-function seasonPage(){let goal=tab==='goals';if(goal)return `<div class="light-page">${header('SET SEASON GOAL')}${btn('← Season overview','season-overview','','back-inline')}<p class="goal-explanation">Choose a target. This changes your saved goal, not your rank.</p><div class="goal-track">${goals.map(p=>btn(`${badge(p)}<b>${rankName(p)}</b><span>${p} points</span>${state.goal===p?'<small>SELECTED GOAL</small>':''}`,'goal',p,p===state.goal?'selected':'')).join('')}</div><div class="goal-bottom"><div><span>YOUR SAVED GOAL</span><h2>${rankName(state.goal)} · ${state.goal}</h2><p>${Math.max(0,state.goal-state.rating)} points above the reference rating</p></div><p>Conqueror is a leaderboard position.<br>The screenshot’s 7,893 is not a fixed threshold.</p>${btn('Done','season-overview','','yellow')}</div></div>`;
- let casual=season==='casual';return `<div class="light-page season-page">${header('SEASON 32','<span class="season-date">2026/09/12 – 2026/11/12 (UTC+0)</span>')}${rail([['classic','Classic Season'],['casual','Casual Season'],['ultimate','Ultimate Royale']],season,'season-tab')}<div class="season-top"><span>◎ Asia</span><span>TPP Squad ⌄</span><span class="demo">SCREENSHOT REFERENCE DATA</span></div><div class="season-word ${casual?'blue':''}">SEASON</div>${season==='ultimate'?`<section class="season-hero">${badge(4200)}<h2>Ultimate Royale</h2><p>Locked in the supplied profile</p>${btn('View details','info','Ultimate Royale is a separate progression system. No local rank is earned in this prototype.','outline')}</section>`:`<section class="season-hero">${badge(casual?2400:state.rating)}<h2>${casual?'Casual Gold':'Gold III'}</h2><p>${casual?'Casual points':'Season highest: Gold III'}</p><div class="rating-line"><span>${casual?'900 / 1500':'2429 / 2500'}</span><div><i style="width:${casual?60:29}%"></i></div></div><small>${casual?'Reference current points limit: 200 / 5000':'Sample rating · gameplay is not connected'}</small></section>`}<aside class="season-left">${btn('<small>YOUR GOAL</small><b>'+rankName(state.goal)+'</b><span>Set season goal →</span>','goals','','season-box')}${btn('<small>REDEEM</small><b>'+(casual?'300':'1522')+'</b><span>Reference currency →</span>','info','Season redemption is not connected. The currency shown comes from your reference screenshot.','season-box')}${btn('<b>Tier Rewards</b><span>View requirements →</span>','rewards','','season-box')}</aside><div class="season-bottom">${btn('♛　Promoting to Ace　　Reach 4199 rating points →','info','The supplied Season screen shows a promotion gate at 4199. Reaching a goal here does not promote the account. Exact promotion match requirements must be checked in the official game.','promotion')}${btn('2026 H2　→','info','2026 H2 is the season series. It is separate from the individual Season 32 rank.','series')}</div></div>`;}
-function profilePage(){let nav=[['basic','BASIC INFO'],['statistics','STATISTICS'],['career','CAREER RESULTS'],['collections','COLLECTIONS'],['honor','HONOR'],['custom','CUSTOM']];let content='';if(profile==='basic')content=`<section class="profile-card"><div class="profile-user"><span class="avatar-icon">♛</span><div><small>LOCAL PLAYER · Lv.41</small><h2>${esc(state.name)}</h2><p>Aspiring Collector 4</p>${btn('Edit name','rename','','outline')}</div></div><div class="profile-badges"><div>${badge(2429)}<b>Gold III</b><small>TPP Squad</small></div><div>${badge(3500)}<b>Diamond II</b><small>Career highest · reference</small></div><div><span class="journey">2</span><b>Journey Badge</b><small>Reference</small></div></div><div class="profile-facts"><div><b>3154</b><small>Season rating</small></div><div><b>1760</b><small>Achievements</small></div><div><b>3 years</b><small>Played for</small></div></div><p class="reference-note">Profile ranks and stats mirror the supplied screenshots. They are sample data, not live account progress.</p></section>`;
- else if(profile==='statistics')content=`<section class="data-content"><div class="data-filters"><span>CURRENT SEASON</span><span>RANKED</span><span>TPP SQUAD</span></div><div class="stat-hero">${[['7','Matches played'],['0','Wins'],['4','Top 10'],['15','Eliminations'],['2.14','K/D ratio']].map(([n,l])=>`<div><small>${l}</small><b>${n}</b></div>`).join('')}</div><div class="stats-grid">${[['0.0%','Win ratio'],['57.1%','Top 10 rate'],['13.5%','Accuracy'],['26.7%','Headshot rate'],['4','Headshots'],['504.0','Average damage'],['3527.9','Total damage'],['10','Most eliminations'],['1638','Highest match damage'],['3','Assists'],['0.4','Average assists'],['B+ / 59.5','Rating']].map(([n,l])=>`<div><small>${l}</small><b>${n}</b></div>`).join('')}</div><p class="reference-note">Screenshot reference statistics · these values do not change through menu interactions.</p></section>`;
- else if(profile==='career')content=`<section class="data-content"><table><thead><tr><th>Team rank</th><th>Mode</th><th>Ranking</th><th>Eliminations</th><th>Score</th></tr></thead><tbody>${[[28,93,0,2429,10],[26,69,2,2419,10],[25,65,0,2409,10],[14,56,1,null,0],[7,11,1,2399,34]].map(([a,b,c,d,e])=>`<tr><td><strong># ${a}</strong></td><td>${d?'Ranked':'Unranked'} Classic (TPP)<small>Squad · Erangel · Asia</small></td><td># ${b}</td><td>${c}</td><td>${d?`${d} <em>(+${e})</em>`:'—'}</td></tr>`).join('')}</tbody></table><p class="reference-note">Match history transcribed from the supplied image.</p></section>`;
- else content=`<section class="data-content centered"><h2>${profile==='collections'?'Your local collection':profile==='honor'?'Honor':'Customize your profile'}</h2><p>${profile==='collections'?Object.keys(state.cards).length+' unique demo cards collected.':profile==='honor'?'No live achievements are awarded by this prototype.':'Your display name is saved on this device.'}</p>${btn(profile==='collections'?'View Cards':'Edit name',profile==='collections'?'nav':'rename',profile==='collections'?'cards':'','yellow')}</section>`;
- return `<div class="${profile==='basic'?'profile-page':'light-page'}">${header('DATA')}${content}${rail(nav,profile,'profile-tab')}</div>`;}
-function shop(){return `${header('THEME · EVENT SHOP')}<div class="shop-preview">${art('shop',[355,233,144,215])}<h2>General Card Pack</h2><p>Open three sample cards for a collection.<br>This prototype uses free local demo packs.</p><span class="shop-price">DEMO · NO REAL CURRENCY</span>${btn('View sample packs','nav','cards','yellow')}</div><section class="shop-grid">${[['General Card Pack',[870,100,120,159]],['Series Card Pack',[996,103,117,157]],['Collaboration Pack',[1123,103,116,157]],['New Card Pack',[871,269,118,158]],['Event Token',[997,270,116,155]],['Avatar Frame',[1123,270,116,155]],['Themed Portrait',[871,436,118,155]],['Collection Card',[997,436,116,155]],['Scene Card',[1123,436,116,155]]].map(([l,r],i)=>btn(`${art('shop',r)}<strong>${l}</strong><small>${i<4?'SAMPLE PACK':'REFERENCE ITEM'}</small>`,i<4?'nav':'info',i<4?'cards':'This reference item is not available for purchase in the prototype.','shop-item')).join('')}</section>${rail([['overview','VERSION OVERVIEW'],['intro','GAMEPLAY INTRO'],['missions','VERSION MISSIONS'],['shop','EVENT SHOP']],'shop','shop-tab')}`;}
-function overlay(){if(!modal)return '';let body='';if(modal==='settings')body=`<h2>Settings</h2><label class="setting-row">Idle animation<input id="motion" type="checkbox" ${state.settings.motion?'checked':''}></label><label class="setting-row">Render quality<select id="quality"><option value="high" ${state.settings.quality==='high'?'selected':''}>High</option><option value="low" ${state.settings.quality==='low'?'selected':''}>Low</option></select></label><p>Drag the 3D scene to rotate. Settings and equipped starter items save on this device.</p>${btn('Reset demo progress','reset-confirm','','outline danger')}`;
- else if(modal==='reset')body=`<h2>Reset local progress?</h2><p>This clears equipped selections, cards, name and season goal on this device.</p>${btn('Reset','reset','','yellow')}${btn('Cancel','dismiss','','outline')}`;
- else if(modal==='modes')body=`<h2>Select mode</h2><div class="mode-cards"><div><strong>CLASSIC · RANKED</strong><h3>Erangel</h3><p>TPP · Squad · Asia</p></div><div><strong>CLASSIC</strong><h3>Livik</h3><p>TPP · Squad</p></div></div><p class="notice">3D match gameplay is the next phase. This version implements the lobby and collection menus; matchmaking is not available.</p>${btn('Back to lobby','dismiss','','yellow')}`;
- else if(modal==='pack')body=`<h2>Pack opened</h2><p>3 local sample cards · ${state.packs} packs remaining</p><div class="reveal-grid">${reveal.map(x=>{let c=collections.find(c=>c.id===collection);return `<div class="collectible">${cardFace(c,x.index)}<strong>${c.id==='opm'?opmNames[x.index]:c.name+' '+(x.index+1)}</strong><small>${x.duplicate?'DUPLICATE':'NEW CARD'}</small></div>`}).join('')}</div>${btn('View collection','collection',collection,'yellow')}`;
- else if(modal==='rename')body=`<h2>Edit display name</h2><form id="name-form"><label>Player name<input name="name" maxlength="20" required value="${esc(state.name)}" autocomplete="off"></label><button class="yellow" type="submit">Save name</button></form>`;
- else if(modal==='roster')body=`<h2>Select ${view==='character'?'Character':'Companion'}</h2><div class="roster">${(view==='character'?characters:companions).map(x=>btn(`${x.rect?art(view==='character'?'characters':'companions',x.rect):'<span class="object-symbol">♟</span>'}<strong>${x.name}</strong><small>${x.owned?'Use':x.ended?'Event has ended':'Locked · Preview'}</small>`,'roster-select',x.id)).join('')}</div>`;
- else body=`<h2>${esc(modal.title||'Details')}</h2><p>${esc(modal.text||'')}</p>${btn('Got it','dismiss','','yellow')}`;
- return `<div class="overlay" role="presentation"><section class="dialog ${modal==='roster'?'wide':''}" role="dialog" aria-modal="true" aria-label="${typeof modal==='string'?modal:'Details'}">${btn('×','dismiss','','dialog-close')}${body}</section></div>`;}
-function render(){document.body.dataset.view=view;let outfit=outfits.find(x=>x.id===state.equipped.outfit);let p=view==='inventory'&&tab==='outfit'?outfits.find(x=>x.id===preview):null;let weapon=weapons.find(x=>x.id===(view==='lab'||(view==='inventory'&&tab==='weapon')?preview:state.equipped.weapon));let vehicle=vehicles.find(x=>x.id===preview);scene.set({type:view==='lobby'?'lobby':view==='vehicle'?'vehicle':view==='lab'?'lab':view==='xsuit'?'xsuit':view==='companion'?'companion':'avatar',...outfit,...p,character:view==='character'||(view==='inventory'&&tab==='character')?preview:state.equipped.character,weaponColor:weapon?.color,vehicle:preview,...(view==='vehicle'?{color:vehicle?.color}:{}),...(view==='xsuit'?{color:'#e7e5d9',accent:['#9cce63','#e9964c','#7ecbdd'][stage%3]}:{}),companion:view==='companion'?preview:state.equipped.companion,hidden:['cards','season','shop'].includes(view)||(view==='profile'&&profile!=='basic'),stage,...state.settings});app.innerHTML=(view==='lobby'?lobby():view==='inventory'?inventory():view==='cards'?cards():view==='season'?seasonPage():view==='profile'?profilePage():view==='shop'?shop():workshopPage())+overlay();if(modal)requestAnimationFrame(()=>app.querySelector('.dialog input,.dialog button')?.focus());}
-app.addEventListener('click',e=>{let b=e.target.closest('[data-action]');if(!b)return;let {action:a,value:v}=b.dataset;
- if(a==='nav'){if(v==='cards')tab='overview';if(v==='season')tab='overview';navigate(v);return;}
- if(a==='back'){if(modal)modal=null;else if(view==='cards'&&tab==='detail')tab='overview';else if(view==='season'&&tab==='goals')tab='overview';else{navigate('lobby');return;}}
- else if(a==='dismiss')modal=null;
- else if(a==='info')modal={title:'Details',text:v};
- else if(a==='workshop')workshop=!workshop;
- else if(a==='settings')modal='settings';else if(a==='modes')modal='modes';
- else if(a==='inventory-tab'){tab=v;preview=state.equipped[v];search='';}
- else if(a==='preview'){preview=v;}
- else if(a==='equip'){let [kind,id]=v.split(':');if(equipItem(state,kind,id)){persist();toast('Equipped · сонголт хадгалагдлаа');}else toast('Түгжээтэй item · зөвхөн preview боломжтой');}
- else if(a==='save-look'){state.savedLook={...state.equipped};persist();toast('Look saved');}
- else if(a==='looks'){if(state.savedLook){for(let [k,id] of Object.entries(state.savedLook))equipItem(state,k,id);preview=state.equipped[tab];persist();toast('Saved look applied');}else toast('Эхлээд Save Look дарж хувцаслалтаа хадгална уу.');}
- else if(a==='collection'){collection=v;view='cards';tab='detail';modal=null;}
- else if(a==='card-overview')tab='overview';
- else if(a==='card-info')modal={title:'Collection card',text:`Owned copies: ${state.cards[v]||0}. Cards come from local sample packs. Online trading is not connected.`};
- else if(a==='open-pack'){collection=v;reveal=openPack(state,v);if(reveal){persist();modal='pack';}else modal={title:'No sample packs left',text:'Your three starter packs have been used. You can inspect collected cards, or reset local demo progress in Settings to try again.'};}
- else if(a==='stage')stage=Number(v);else if(a==='form')stage=Number(v);
- else if(a==='season-tab'){season=v;tab='overview';}else if(a==='goals')tab='goals';else if(a==='season-overview')tab='overview';
- else if(a==='goal'){if(setGoal(state,Number(v))){persist();toast('Season goal saved · rank өөрчлөгдөөгүй');}}
- else if(a==='rewards')modal={title:'Tier rewards',text:'The reference shows tier-based rewards and match requirements. This prototype does not grant official rewards. Your selected season goal is stored separately from the reference rank.'};
- else if(a==='profile-tab')profile=v;else if(a==='rename')modal='rename';
- else if(a==='roster')modal='roster';else if(a==='roster-select'){preview=v;modal=null;}
- else if(a==='reset-confirm')modal='reset';else if(a==='reset'){state=fresh();persist();modal=null;navigate('lobby');return;}
- else if(a==='shop-tab')modal={title:b.textContent,text:'This section is outside the current collection prototype. Event Shop is available for reference browsing.'};
- render();
+app.innerHTML='<div id="screen-root" class="screen-root"></div><div id="modal-root"></div>';
+const screenRoot=document.querySelector('#screen-root'),modalRoot=document.querySelector('#modal-root');
+let storage;try{storage=window.localStorage;}catch{storage=undefined;}
+const store=createStore({storage}),router=createRouter();
+const ui={view:'lobby',workshop:false,tab:'outfit',preview:'azure',stage:0,form:0,season:'classic',profile:'basic',collection:'opm',search:'',owned:false,sort:'quality',modal:null,reveal:null,saveStatus:store.status};
+let scene;
+try{scene=new Scene(document.querySelector('#scene'));}catch(error){
+ console.error('3D initialization failed',error);scene={set(){}};
+ const fallback=document.createElement('div');fallback.className='webgl-fallback';fallback.textContent='3D preview is unavailable. Collection menus remain ready.';app.before(fallback);
+}
+let pending=null,queued=false,previousRoute='',lastScene='',focusReturn=null,modalOpen=false,commandNumber=0;
+const scrollSelectors=['.item-grid','.cards-grid','.goal-track','.showroom-catalog','.rail','.data-content','.profile-card','.shop-grid','.roster','.dialog'];
+function notice(message,kind='success'){
+ const node=document.querySelector('#toast');node.replaceChildren();
+ node.insertAdjacentHTML('beforeend',icon(kind==='success'?'check':'info'));
+ node.append(document.createTextNode(message));node.dataset.kind=kind;node.classList.add('show');
+ clearTimeout(notice.timer);notice.timer=setTimeout(()=>node.classList.remove('show'),4000);
+}
+function command(action){
+ const result=store.dispatch({...action,id:'ui-'+(++commandNumber)});
+ if(result.ok && !result.persisted)notice('Session-д хадгаллаа. Browser storage ашиглах боломжгүй.','info');
+ return result;
+}
+function configureScene(){
+ const state=store.getState(),{view,tab,preview,stage,form}=ui;
+ const outfit=outfits.find(x=>x.id===state.equipped.outfit);
+ const selectedOutfit=view==='inventory'&&tab==='outfit'?outfits.find(x=>x.id===preview):null;
+ const weapon=weapons.find(x=>x.id===(view==='lab'||(view==='inventory'&&tab==='weapon')?preview:state.equipped.weapon));
+ const vehicle=vehicles.find(x=>x.id===preview);
+ const options={type:view==='lobby'?'lobby':view==='vehicle'?'vehicle':view==='lab'?'lab':view==='xsuit'?'xsuit':view==='companion'?'companion':'avatar',...outfit,...selectedOutfit,
+  character:view==='character'||(view==='inventory'&&tab==='character')?preview:state.equipped.character,
+  weaponColor:weapon?.color,vehicle:preview,...(view==='vehicle'?{color:vehicle?.color}:{}),
+  ...(view==='xsuit'?{color:'#e7e5d9',accent:['#9cce63','#e9964c','#7ecbdd'][form]}:{}),
+  companion:view==='companion'?preview:state.equipped.companion,
+  hidden:['cards','season','shop'].includes(view)||(view==='profile'&&ui.profile!=='basic'),paused:Boolean(ui.modal),stage,...state.settings};
+ const key=JSON.stringify(options);if(key!==lastScene){lastScene=key;scene.set(options);}
+}
+function focusSnapshot(){
+ const node=document.activeElement;
+ if(!app.contains(node))return null;
+ return {id:node.id,action:node.dataset?.action,value:node.dataset?.value,start:node.selectionStart,end:node.selectionEnd};
+}
+function findControl(focus){
+ if(!focus)return null;
+ if(focus.id)return document.getElementById(focus.id);
+ return [...app.querySelectorAll('[data-action]')].find(n=>n.dataset.action===focus.action&&n.dataset.value===focus.value);
+}
+function restoreFocus(focus){
+ const node=findControl(focus);if(!node)return;node.focus({preventScroll:true});
+ if(typeof focus.start==='number'&&node.setSelectionRange && ['text','search'].includes(node.type))node.setSelectionRange(focus.start,focus.end);
+}
+function flush(){
+ queued=false;const flags=pending||{};pending=null;
+ const state=store.getState();ui.saveStatus=store.status;
+ const routeKey=JSON.stringify(router.getRoute()),changedRoute=routeKey!==previousRoute;
+ const focus=focusSnapshot();const scroll=[];
+ if(!changedRoute)for(const selector of scrollSelectors){const node=app.querySelector(selector);if(node)scroll.push([selector,node.scrollLeft,node.scrollTop]);}
+ if(flags.screen){
+  const html=renderScreens(ui,state);screenRoot.innerHTML=html.screen;
+  if(changedRoute){screenRoot.classList.remove('screen-enter');void screenRoot.offsetWidth;screenRoot.classList.add('screen-enter');}
+  modalRoot.innerHTML=html.dialog;
+ }else{
+  if(flags.grid){const grid=screenRoot.querySelector('.item-grid');if(grid)grid.innerHTML=inventoryGrid(ui,state);}
+  if(flags.dialog)modalRoot.innerHTML=renderScreens(ui,state,{dialogOnly:true}).dialog;
+ }
+ document.body.dataset.view=ui.view;
+ for(const [selector,x,y] of scroll){const node=app.querySelector(selector);if(node){node.scrollLeft=x;node.scrollTop=y;}}
+ for(const node of screenRoot.querySelectorAll('.item,.collectible,.rail button,.stage-list button,.goal-track button'))node.setAttribute('aria-pressed',String(node.classList.contains('selected')||node.classList.contains('active')));
+ for(const node of app.querySelectorAll('.close,.dialog-close'))node.setAttribute('aria-label','Close screen');
+ const workshopButton=app.querySelector('[data-action="workshop"]');if(workshopButton)workshopButton.setAttribute('aria-expanded',String(ui.workshop));
+ screenRoot.inert=Boolean(ui.modal);document.querySelector('#scene').style.pointerEvents=ui.modal?'none':'';
+ if(ui.modal){
+  if(!modalOpen)focusReturn=focus;
+  if(!modalOpen||flags.dialog||flags.screen){
+   if(modalOpen && focus?.id && modalRoot.querySelector('#'+CSS.escape(focus.id)))restoreFocus(focus);
+   else modalRoot.querySelector('input,select,button')?.focus({preventScroll:true});
+  }
+ }else if(modalOpen)restoreFocus(focusReturn);
+ else if(!changedRoute)restoreFocus(focus);
+ modalOpen=Boolean(ui.modal);previousRoute=routeKey;configureScene();
+}
+function schedule(kind='screen'){
+ pending=pending||{};pending[kind]=true;if(kind==='screen')pending.dialog=true;
+ if(!queued){queued=true;requestAnimationFrame(flush);}
+}
+function applyRoute(route){
+ const state=store.getState();Object.assign(ui,route,{modal:null,workshop:false,stage:0,form:0,search:'',owned:false});
+ if(route.view==='inventory')ui.preview=state.equipped[route.tab];
+ else if(['character','vehicle'].includes(route.view))ui.preview=state.equipped[route.view];
+ else if(route.view==='lab')ui.preview='nature';
+ else if(route.view==='companion')ui.preview='kitten';
+ else if(route.view==='xsuit')ui.preview='azure';
+ schedule();
+}
+function navigate(view){router.go({view});}
+function showDialog(dialog){ui.modal=dialog;schedule('dialog');}
+function dismiss(){ui.modal=null;schedule('dialog');}
+function back(){if(ui.modal)dismiss();else if(ui.workshop){ui.workshop=false;schedule();}else router.back();}
+store.subscribe((state,meta)=>schedule(meta.type==='settings'?'dialog':'screen'));
+router.subscribe(applyRoute);
+app.addEventListener('click',event=>{
+ const button=event.target.closest('[data-action]');if(!button||button.disabled)return;
+ if(ui.modal && !modalRoot.contains(button))return;
+ const {action,value}=button.dataset,state=store.getState();
+ switch(action){
+  case 'nav':navigate(value);return;
+  case 'back':back();return;
+  case 'dismiss':dismiss();return;
+  case 'info':showDialog({title:'Details',text:value});return;
+  case 'workshop':ui.workshop=!ui.workshop;schedule();return;
+  case 'settings':showDialog('settings');return;
+  case 'modes':showDialog('modes');return;
+  case 'inventory-tab':router.go({view:'inventory',tab:value});return;
+  case 'preview':{
+   const kind=ui.view==='lab'?'weapon':ui.view==='inventory'?ui.tab:ui.view;
+   if(catalogs[kind]?.some(x=>x.id===value)){ui.preview=value;ui.stage=0;schedule();}return;
+  }
+  case 'equip':{
+   const [kind,item]=value.split(':');const result=command({type:'equip',kind,item});
+   if(result.ok && result.persisted)notice('Equipped · сонголт хадгалагдлаа');
+   else if(!result.ok)notice('Түгжээтэй item · зөвхөн preview боломжтой','info');return;
+  }
+  case 'save-look':if(command({type:'look/save'}).persisted)notice('Look saved');return;
+  case 'looks':{
+   const result=command({type:'look/apply'});
+   if(result.ok){ui.preview=store.getState().equipped[ui.tab];if(result.persisted)notice('Saved look applied');}
+   else notice('Эхлээд Save Look дарж хувцаслалтаа хадгална уу.','info');return;
+  }
+  case 'collection':router.go({view:'cards',tab:'detail',collection:value});ui.modal=null;schedule('dialog');return;
+  case 'card-overview':router.go({view:'cards',tab:'overview'});return;
+  case 'card-info':showDialog({title:'Collection card',text:`Owned copies: ${state.cards[value]||0}. Cards come from local sample packs. Online trading is not connected.`});return;
+  case 'open-pack':{
+   const result=command({type:'pack/open',collection:value});
+   if(result.ok){ui.collection=value;ui.reveal=result.value;showDialog('pack');}
+   else showDialog({title:'No sample packs available',text:result.error==='This action is not available.'?'Your starter packs have been used. View your cards or reset local demo progress in Settings.':result.error});return;
+  }
+  case 'stage':{const n=Number(value);if(Number.isInteger(n)&&n>=0&&n<(ui.view==='vehicle'?4:7)){ui.stage=n;schedule();}return;}
+  case 'form':{const n=Number(value);if(Number.isInteger(n)&&n>=0&&n<3){ui.form=n;schedule();}return;}
+  case 'season-tab':router.go({view:'season',season:value});return;
+  case 'goals':router.go({view:'season',tab:'goals'});return;
+  case 'season-overview':router.go({view:'season',season:ui.season});return;
+  case 'goal':if(command({type:'goal',points:Number(value)}).persisted)notice('Season goal saved · rank өөрчлөгдөөгүй');return;
+  case 'rewards':showDialog({title:'Tier rewards',text:'Tier-based rewards belong to the official game. Your selected goal is saved separately from the reference rank.'});return;
+  case 'profile-tab':router.go({view:'profile',profile:value});return;
+  case 'rename':showDialog('rename');return;
+  case 'roster':showDialog('roster');return;
+  case 'roster-select':ui.preview=value;ui.modal=null;schedule();return;
+  case 'reset-confirm':showDialog('reset');return;
+  case 'reset':command({type:'reset'});ui.modal=null;router.go({view:'lobby'});schedule();return;
+  case 'shop-tab':showDialog({title:button.textContent,text:'Event Shop contains the current reference catalog. This additional section is not connected.'});return;
+ }
 });
-app.addEventListener('input',e=>{if(e.target.id==='search'){let pos=e.target.selectionStart;search=e.target.value;render();let t=document.querySelector('#search');t.focus();t.setSelectionRange(pos,pos);}});
-app.addEventListener('change',e=>{if(e.target.id==='owned')owned=e.target.checked;if(e.target.id==='sort')sort=e.target.value;if(e.target.id==='motion'){state.settings.motion=e.target.checked;persist();}if(e.target.id==='quality'){state.settings.quality=e.target.value;persist();}render();});
-app.addEventListener('submit',e=>{if(e.target.id==='name-form'){e.preventDefault();let n=new FormData(e.target).get('name').trim();if(n){state.name=n.slice(0,20);persist();modal=null;render();}}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(modal){modal=null;render();}else if(view!=='lobby'){if(view==='season'&&tab==='goals'){tab='overview';render();}else if(view==='cards'&&tab==='detail'){tab='overview';render();}else navigate('lobby');}else if(workshop){workshop=false;render();}}if(e.key==='Tab'&&modal){let els=[...app.querySelectorAll('.dialog button,.dialog input,.dialog select')];let first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
-render();
+app.addEventListener('input',event=>{if(event.target.id==='search'){ui.search=event.target.value;schedule('grid');}});
+app.addEventListener('change',event=>{
+ const {id,value,checked}=event.target;
+ if(id==='owned'){ui.owned=checked;schedule('grid');}
+ if(id==='sort'){ui.sort=value;schedule('grid');}
+ if(id==='motion')command({type:'settings',key:'motion',value:checked});
+ if(id==='quality')command({type:'settings',key:'quality',value});
+});
+app.addEventListener('submit',event=>{
+ if(event.target.id!=='name-form')return;event.preventDefault();
+ const result=command({type:'rename',name:new FormData(event.target).get('name')});
+ if(result.ok){dismiss();if(result.persisted)notice('Display name saved');}
+});
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'){event.preventDefault();back();}
+ if(event.key==='Tab'&&ui.modal){
+  const nodes=[...modalRoot.querySelectorAll('button,input,select')].filter(n=>!n.disabled),first=nodes[0],last=nodes.at(-1);
+  if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+  else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+ }
+ if(!ui.modal && event.key.toLowerCase()==='i'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!event.ctrlKey&&!event.metaKey&&!event.altKey)navigate('inventory');
+});
+applyRoute(router.getRoute());
