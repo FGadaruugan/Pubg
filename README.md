@@ -1,60 +1,59 @@
-# PUBG-inspired Battleground Lobby
+# Battleground lobby · v2
 
-A responsive, independent fan lobby for desktop and mobile browsers. Original generated artwork, a PUBG-style layout, interactive menus and a playable local target range.
+Screenshot-inspired, buildless browser lobby with a native WebGL showroom. Drag the scene to orbit and scroll to zoom. Original procedural geometry represents the avatar, outfits, rifle, vehicle and companion; it does not use official PUBG 3D models.
 
 ## Run
 
-Serve the repository over HTTP (ES modules do not run reliably from `file://`):
+Serve the folder over HTTP (ES modules need an HTTP origin):
 
 ```sh
-python -m http.server 8080
+python3 -m http.server 8080
 ```
 
-Open http://localhost:8080. Alternatively, open the folder in VS Code and use Live Server.
+Open `http://localhost:8080`. There are no runtime dependencies, CDNs, accounts or build steps.
 
-## Publish with GitHub Pages
+## Implemented
 
-In the repository, open **Settings → Pages → Build and deployment → Deploy from a branch**, select **main** and **/(root)**, then Save. GitHub supplies the live address after deployment. No build step is needed.
+- 3D stone-courtyard lobby, selectable full-screen menus, Workshop submenu.
+- Inventory search, name sorting, owned filter, starter outfit/character/weapon equip, saved look.
+- Cards overview and collection detail, three free local sample packs, duplicate counts, persisted collection progress.
+- Character, Companions, Vehicles, The Lab and X-Suit showrooms, locked preview states and stage selection.
+- Classic, Casual and Ultimate Royale Season reference screens; selectable saved rank goal that never changes rating.
+- Profile name editing, screenshot reference stats and career results.
+- Theme event-shop reference catalog, settings for render quality and idle animation.
+- Validated local save v2, safe fallback when browser storage is blocked, explicit reset confirmation.
+- Responsive landscape and portrait CSS, keyboard controls, dialog focus trap and Escape navigation.
 
-## Included
+START opens mode information. Actual 3D matches, multiplayer, payments, official inventory, live events, trading and official ranks are not connected. The rejected 2D target-practice game has been removed.
 
-- Cinematic illustrated lobby, squad slots, yellow Start, event rail and bottom navigation.
-- Mode and map preferences; online modes are explicitly marked unavailable.
-- 30-second local target practice with hit detection, weapon firing intervals, results and pause when the tab is hidden.
-- Profile name, statistics, training rank, inventory, workshop and BP theme shop.
-- Earned milestone rewards with duplicate-claim prevention.
-- Volume, interface sound, visual-quality and reduced-motion controls.
-- Validated, versioned browser storage with in-memory fallback when storage is blocked.
-- Keyboard-accessible native dialogs; responsive portrait and landscape styles.
+## Reference versus local state
 
-The main scene is original AI-generated artwork, not an interactive 3D model. Equipping a lobby theme changes its color treatment. Training uses stylized shooting ranges, not the full PUBG maps. The weapon stat charts are illustrative.
+Ranks, currency labels and profile statistics transcribe the supplied screenshots and are labeled reference data. Cards, selected goal, name and equipped starter items are local prototype state. Some inventory names are descriptive prototype labels. Viewing a locked item or upgrade stage never grants ownership. Stage effects are simple UI previews; original animation assets and advanced 3D skins are not available. Screenshot thumbnails are reference artwork, sometimes reused for sample cards.
 
-There is no multiplayer server, live friends/chat, real-money store, official competitive rank or account/cloud sync. These entry points explain their availability rather than faking network actions. Local BP has no monetary value. Clearing browser storage removes progress.
+Conqueror is a leaderboard position, not a fixed 7,893-point threshold. Choosing a Season goal does not promote a player or grant official rewards.
 
 ## Structure
 
-- `index.html`, `styles.css`: lobby shell and responsive layout
-- `src/app.js`: menus and UI interactions
-- `src/state.js`: catalog, validation, progression and persistence
-- `src/training.js`: local canvas target practice
-- `src/icons.js`: original inline SVG UI icons
-- `assets/lobby.webp`: optimized original generated scene
-- `tests/`: Node.js tests
+- `src/scene.js`: native WebGL lighting, procedural meshes and orbit controls
+- `src/app.js`: screen rendering, navigation and interactions
+- `src/catalog.js`: reference catalog and rank labels
+- `src/model.js`: save validation, ownership, packs and goal logic
+- `assets/reference/`: user-provided screenshot artwork for catalog thumbnails
+- `tests/`: state regression tests and finite-geometry checks
+- `docs/superpowers/`: implementation scope and plan
+
+## Validation
 
 ```sh
 npm test
+node --check src/app.js
+node --check src/scene.js
 ```
 
-No production dependencies or external asset requests are required. Node.js 22+ is recommended for tests.
+Business-state tests and JS syntax checks run in Node. Interactive browser and visual QA have not been run in the managed environment; rendering fidelity and touch layouts still require a real-browser review. WebGL failure leaves the menus usable with an explanatory message.
 
-## Reference and asset provenance
+## Hosting
 
-Visual and interaction research used PUBG Mobile's official lobby/help documentation, the official New Era lobby page and Google Play's PUBG Mobile interface guides:
+The repository can be served as a static site. No server component is required. Deployment is separate from the source-code update.
 
-- https://www.pubgmobile.com/en/event/newera/
-- https://pubgmobile.helpshift.com/hc/en/3-pubg-mobile/faq/395-game-lobby-has-been-changed/
-- https://play.google.com/store/apps/editorial?hl=en-US&id=mc_editorialevergreen_post_install_pubg_mobile_team_up_now_fcp
-
-Scene created with the built-in image generation tool: a cinematic battle-royale survivor in helmet, white shirt and tactical harness, rifle held safely across the body, military jeep, coastal airfield and mountainous stormy sunset; uncluttered corners for UI; no text or logos. Original source was converted to WebP for the site.
-
-Independent fan project; not affiliated with or endorsed by KRAFTON or Tencent. PUBG and related marks belong to their respective owners.
+Independent fan prototype, not affiliated with KRAFTON or Tencent. User-supplied screenshots are reference material; game artwork and marks belong to their owners.

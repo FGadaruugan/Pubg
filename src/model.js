@@ -1,0 +1,11 @@
+import {catalogs,collections,goals} from './catalog.js';
+export const KEY='pubg-reference-lobby:v2';
+export function fresh(){return {version:2,name:'PLAYER_01',equipped:{outfit:'azure',character:'default',weapon:'violet',vehicle:'buggy',companion:'none'},packs:3,cards:{},goal:2700,rating:2429,settings:{motion:true,quality:'high'},savedLook:null};}
+const whole=(n,f=0)=>Number.isFinite(n)?Math.max(0,Math.min(100000,Math.floor(n))):f;
+export function normalize(input){const d=fresh(),v=input&&typeof input==='object'?input:{};if(typeof v.name==='string'&&v.name.trim())d.name=v.name.trim().slice(0,20);d.packs=whole(v.packs,d.packs);for(const kind of Object.keys(catalogs)){const found=catalogs[kind].find(x=>x.id===v.equipped?.[kind]&&x.owned);if(found)d.equipped[kind]=found.id;}for(const c of collections)for(let i=0;i<c.total;i++){const id=`${c.id}-${i}`,count=whole(v.cards?.[id]);if(count)d.cards[id]=count;}if(goals.includes(v.goal))d.goal=v.goal;if(typeof v.settings?.motion==='boolean')d.settings.motion=v.settings.motion;if(v.settings?.quality==='low')d.settings.quality='low';if(v.savedLook&&typeof v.savedLook==='object'){d.savedLook={};for(const kind of Object.keys(catalogs)){const id=v.savedLook[kind];if(catalogs[kind].some(x=>x.id===id&&x.owned))d.savedLook[kind]=id;}}return d;}
+export function load(storage){try{return normalize(JSON.parse(storage.getItem(KEY)));}catch{return fresh();}}
+export function save(s,storage){try{storage.setItem(KEY,JSON.stringify(s));return true;}catch{return false;}}
+export function equipItem(s,kind,id){if(!catalogs[kind]?.some(x=>x.id===id&&x.owned))return false;s.equipped[kind]=id;return true;}
+export function setGoal(s,points){if(!goals.includes(points))return false;s.goal=points;return true;}
+export function openPack(s,collectionId,rng=Math.random){const c=collections.find(x=>x.id===collectionId);if(!c||s.packs<1)return null;s.packs--;const result=[];for(let i=0;i<3;i++){const roll=Number(rng());const index=Math.min(c.total-1,Math.max(0,Math.floor((Number.isFinite(roll)?roll:0)*c.total)));const id=`${c.id}-${index}`;const duplicate=Boolean(s.cards[id]);s.cards[id]=(s.cards[id]||0)+1;result.push({id,index,duplicate});}return result;}
+export function progress(s,id){return Object.keys(s.cards).filter(k=>k.startsWith(id+'-')&&s.cards[k]>0).length;}

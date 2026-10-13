@@ -1,3 +1,5 @@
+> Archived v1 design. Superseded by docs/superpowers/specs/2026-10-12-lobby-rebuild.md.
+
 # PUBG-inspired lobby
 
 Build a static, responsive fan-made lobby in the user's empty FGadaruugan/Pubg repository. The preceding conversation provides the approved visual and feature brief: cinematic central survivor, squad slots, yellow Start at lower left, mode selection, profile, inventory, workshop, shop, missions, settings and secondary menus.

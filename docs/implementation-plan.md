@@ -1,3 +1,5 @@
+> Archived v1 design. Superseded by docs/superpowers/specs/2026-10-12-lobby-rebuild.md.
+
 # Lobby Implementation Plan
 
 Goal: deliver the approved PUBG-inspired interactive lobby to FGadaruugan/Pubg.
