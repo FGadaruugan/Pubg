@@ -16,10 +16,10 @@
 - [x] Verify pure screen and DOM-controller flow tests, mobile structure and all module imports.
 ## Task 3 — review and save
 - [x] Fresh code review and concrete fixes; update README and run final tests.
-- [ ] Save to existing GitHub main using expected SHA and verify new remote head.
+- [x] Save to existing GitHub main using expected SHA and verify new remote head.
 
 ## Review fix and validation
 
 The fresh reviewer found that spreading equipped starter properties into a locked outfit or X-Suit preview retained `starter:true`, selecting the wrong mesh. Scene selection now resolves the preview outfit independently and chooses the X-Suit model explicitly. Two regression tests first failed on the inherited flag, then passed after the fix; a geometry test verifies that X-Suit decorations remain present with every starter outfit and basic gear.
 
-The Node suite, module syntax/import checks, JPEG verification and CSS structure checks pass. Browser visual/device QA is unavailable in this managed environment; real-browser layout and touch verification remain pending.
+All 36 Node tests, module syntax/import checks, JPEG verification and CSS structure checks pass. The 27 changed files were checked against the uploaded tree, unchanged source files were preserved, and GitHub main was advanced with an expected-SHA guard. Source commit `c536c8c64fc5b69f96349b510d76b4d0d17a243b` was confirmed as the remote head before this record update. Browser visual/device QA is unavailable in this managed environment; real-browser layout and touch verification remain pending.
