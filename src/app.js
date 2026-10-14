@@ -1,23 +1,25 @@
-import {outfits,weapons,vehicles,catalogs} from './catalog.js';
+import {catalogs} from './catalog.js';
+import {gateRoute,defaultAppearance,validDraft} from './player.js';
 import {createStore} from './store.js';
 import {createRouter} from './router.js';
 import {renderScreens,inventoryGrid} from './screens.js';
 import {icon} from './icons.js';
 import {Scene} from './scene.js';
+import {sceneOptions} from './preview.js';
 
 const app=document.querySelector('#app');
 app.innerHTML='<div id="screen-root" class="screen-root"></div><div id="modal-root"></div>';
 const screenRoot=document.querySelector('#screen-root'),modalRoot=document.querySelector('#modal-root');
 let storage;try{storage=window.localStorage;}catch{storage=undefined;}
 const store=createStore({storage}),router=createRouter();
-const ui={view:'lobby',workshop:false,tab:'outfit',preview:'azure',stage:0,form:0,season:'classic',profile:'basic',collection:'opm',search:'',owned:false,sort:'quality',modal:null,reveal:null,saveStatus:store.status};
+const ui={view:'lobby',workshop:false,tab:'outfit',preview:'azure',stage:0,form:0,season:'classic',profile:'basic',collection:'opm',search:'',owned:false,sort:'quality',modal:null,reveal:null,saveStatus:store.status,createDraft:null,nameRoll:0,namesOpen:false,createError:'',introStep:0,guideStep:0,wowEntered:false};
 let scene;
 try{scene=new Scene(document.querySelector('#scene'));}catch(error){
  console.error('3D initialization failed',error);scene={set(){}};
  const fallback=document.createElement('div');fallback.className='webgl-fallback';fallback.textContent='3D preview is unavailable. Collection menus remain ready.';app.before(fallback);
 }
 let pending=null,queued=false,previousRoute='',lastScene='',focusReturn=null,modalOpen=false,commandNumber=0;
-const scrollSelectors=['.item-grid','.cards-grid','.goal-track','.showroom-catalog','.rail','.data-content','.profile-card','.shop-grid','.roster','.dialog'];
+const scrollSelectors=['.item-grid','.cards-grid','.goal-track','.showroom-catalog','.rail','.data-content','.profile-card','.shop-grid','.roster','.dialog','.creation-options'];
 function notice(message,kind='success'){
  const node=document.querySelector('#toast');node.replaceChildren();
  node.insertAdjacentHTML('beforeend',icon(kind==='success'?'check':'info'));
@@ -30,17 +32,7 @@ function command(action){
  return result;
 }
 function configureScene(){
- const state=store.getState(),{view,tab,preview,stage,form}=ui;
- const outfit=outfits.find(x=>x.id===state.equipped.outfit);
- const selectedOutfit=view==='inventory'&&tab==='outfit'?outfits.find(x=>x.id===preview):null;
- const weapon=weapons.find(x=>x.id===(view==='lab'||(view==='inventory'&&tab==='weapon')?preview:state.equipped.weapon));
- const vehicle=vehicles.find(x=>x.id===preview);
- const options={type:view==='lobby'?'lobby':view==='vehicle'?'vehicle':view==='lab'?'lab':view==='xsuit'?'xsuit':view==='companion'?'companion':'avatar',...outfit,...selectedOutfit,
-  character:view==='character'||(view==='inventory'&&tab==='character')?preview:state.equipped.character,
-  weaponColor:weapon?.color,vehicle:preview,...(view==='vehicle'?{color:vehicle?.color}:{}),
-  ...(view==='xsuit'?{color:'#e7e5d9',accent:['#9cce63','#e9964c','#7ecbdd'][form]}:{}),
-  companion:view==='companion'?preview:state.equipped.companion,
-  hidden:['cards','season','shop'].includes(view)||(view==='profile'&&ui.profile!=='basic'),paused:Boolean(ui.modal),stage,...state.settings};
+ const options=sceneOptions(ui,store.getState());
  const key=JSON.stringify(options);if(key!==lastScene){lastScene=key;scene.set(options);}
 }
 function focusSnapshot(){
@@ -74,6 +66,7 @@ function flush(){
  document.body.dataset.view=ui.view;
  for(const [selector,x,y] of scroll){const node=app.querySelector(selector);if(node){node.scrollLeft=x;node.scrollTop=y;}}
  for(const node of screenRoot.querySelectorAll('.item,.collectible,.rail button,.stage-list button,.goal-track button'))node.setAttribute('aria-pressed',String(node.classList.contains('selected')||node.classList.contains('active')));
+ for(const node of app.querySelectorAll('.gear-remove'))node.setAttribute('aria-label','Remove equipped item');
  for(const node of app.querySelectorAll('.close,.dialog-close'))node.setAttribute('aria-label','Close screen');
  const workshopButton=app.querySelector('[data-action="workshop"]');if(workshopButton)workshopButton.setAttribute('aria-expanded',String(ui.workshop));
  screenRoot.inert=Boolean(ui.modal);document.querySelector('#scene').style.pointerEvents=ui.modal?'none':'';
@@ -92,7 +85,14 @@ function schedule(kind='screen'){
  if(!queued){queued=true;requestAnimationFrame(flush);}
 }
 function applyRoute(route){
- const state=store.getState();Object.assign(ui,route,{modal:null,workshop:false,stage:0,form:0,search:'',owned:false});
+ const state=store.getState(),gated=gateRoute(route,state);
+ if(gated.view!==route.view){router.go(gated,{replace:true});return;}
+ if(route.view==='create'&&(ui.view!=='create'||!ui.createDraft)){
+  ui.createDraft={name:state.player.created?state.name:'',appearance:{...state.appearance}};ui.namesOpen=false;ui.createError='';
+ }
+ if(route.view==='intro'&&ui.view!=='intro')ui.introStep=0;
+ if(route.view==='wow'&&ui.view!=='wow')ui.wowEntered=false;
+ Object.assign(ui,route,{modal:null,workshop:false,stage:0,form:0,search:'',owned:route.view==='inventory'&&state.player.created&&!state.player.legacy});
  if(route.view==='inventory')ui.preview=state.equipped[route.tab];
  else if(['character','vehicle'].includes(route.view))ui.preview=state.equipped[route.view];
  else if(route.view==='lab')ui.preview='nature';
@@ -123,6 +123,20 @@ app.addEventListener('click',event=>{
    const kind=ui.view==='lab'?'weapon':ui.view==='inventory'?ui.tab:ui.view;
    if(catalogs[kind]?.some(x=>x.id===value)){ui.preview=value;ui.stage=0;schedule();}return;
   }
+  case 'appearance':{
+   if(ui.view!=='create'||!ui.createDraft)return;
+   const [key,raw]=value.split(':');if(!['gender','face','hair','hairColor','outfit'].includes(key))return;
+   const appearance={...ui.createDraft.appearance,[key]:['face','hair','hairColor'].includes(key)?Number(raw):raw};
+   if(validDraft({name:'Preview',appearance})){ui.createDraft.appearance=appearance;ui.createError='';schedule();}return;
+  }
+  case 'suggest-names':ui.nameRoll++;ui.namesOpen=true;schedule();return;
+  case 'use-name':if(ui.createDraft){ui.createDraft.name=value;ui.namesOpen=false;ui.createError='';schedule();}return;
+  case 'intro-step':{const n=Number(value);if(Number.isInteger(n)&&n>=0&&n<3){ui.introStep=n;schedule();}return;}
+  case 'intro-next':ui.introStep=Math.min(2,ui.introStep+1);schedule();return;
+  case 'intro-finish':if(command({type:'intro/seen'}).ok)router.go({view:'lobby'});return;
+  case 'guide-step':{const n=Number(value);if(Number.isInteger(n)&&n>=0&&n<6){ui.guideStep=n;schedule();}return;}
+  case 'wow-start':command({type:'wow/seen'});ui.wowEntered=true;schedule();return;
+  case 'unequip':if(command({type:'unequip',kind:value}).ok){ui.preview='none';schedule();notice('Item removed');}return;
   case 'equip':{
    const [kind,item]=value.split(':');const result=command({type:'equip',kind,item});
    if(result.ok && result.persisted)notice('Equipped · сонголт хадгалагдлаа');
@@ -154,11 +168,14 @@ app.addEventListener('click',event=>{
   case 'roster':showDialog('roster');return;
   case 'roster-select':ui.preview=value;ui.modal=null;schedule();return;
   case 'reset-confirm':showDialog('reset');return;
-  case 'reset':command({type:'reset'});ui.modal=null;router.go({view:'lobby'});schedule();return;
+  case 'reset':command({type:'reset'});ui.modal=null;router.go({view:'welcome'});schedule();return;
   case 'shop-tab':showDialog({title:button.textContent,text:'Event Shop contains the current reference catalog. This additional section is not connected.'});return;
  }
 });
-app.addEventListener('input',event=>{if(event.target.id==='search'){ui.search=event.target.value;schedule('grid');}});
+app.addEventListener('input',event=>{
+ if(event.target.id==='search'){ui.search=event.target.value;schedule('grid');}
+ if(event.target.id==='player-name'&&ui.createDraft){ui.createDraft.name=event.target.value;ui.createError='';const error=document.getElementById('create-error');if(error)error.textContent='';}
+});
 app.addEventListener('change',event=>{
  const {id,value,checked}=event.target;
  if(id==='owned'){ui.owned=checked;schedule('grid');}
@@ -167,6 +184,14 @@ app.addEventListener('change',event=>{
  if(id==='quality')command({type:'settings',key:'quality',value});
 });
 app.addEventListener('submit',event=>{
+ if(event.target.id==='create-form'){
+  event.preventDefault();if(ui.view!=='create')return;const state=store.getState();const name=new FormData(event.target).get('name');
+  const input={name,appearance:ui.createDraft?.appearance};
+  if(!validDraft(input)){ui.createError='3–20 letters, numbers, spaces, underscores or hyphens are required.';schedule();return;}
+  const result=command({type:state.player.created?'player/update':'player/create',...input});
+  if(result.ok)router.go({view:state.player.created?'lobby':'intro'});
+  else{ui.createError=result.error;schedule();}return;
+ }
  if(event.target.id!=='name-form')return;event.preventDefault();
  const result=command({type:'rename',name:new FormData(event.target).get('name')});
  if(result.ok){dismiss();if(result.persisted)notice('Display name saved');}

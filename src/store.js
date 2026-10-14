@@ -1,3 +1,4 @@
+import {createPlayer,validDraft,normalizeAppearance} from './player.js';
 import {fresh,load,save,normalize,equipItem,setGoal,openPack} from './model.js';
 
 const freeze = value => {
@@ -10,7 +11,7 @@ const freeze = value => {
 const copy=value=>JSON.parse(JSON.stringify(value));
 
 /** Atomic local actions: readers cannot mutate the published save. */
-export function createStore({storage,rng=Math.random}={}){
+export function createStore({storage,rng=Math.random,now=Date.now}={}){
  let state=freeze(load(storage)),status='ready';
  const subscribers=new Set(),commands=new Map();
  function dispatch(command={}){
@@ -18,6 +19,12 @@ export function createStore({storage,rng=Math.random}={}){
   const draft=copy(state);let value=null,ok=false;
   try{
    switch(command.type){
+    case 'player/create':ok=createPlayer(draft,command,now());break;
+    case 'player/update':
+     if(draft.player.created && validDraft(command)){draft.name=command.name.trim();draft.appearance=normalizeAppearance(command.appearance);ok=true;}break;
+    case 'intro/seen':if(draft.player.created){draft.introSeen=true;ok=true;}break;
+    case 'wow/seen':if(draft.player.created){draft.wowSeen=true;ok=true;}break;
+    case 'unequip':if(['outfit','weapon','vehicle'].includes(command.kind))ok=equipItem(draft,command.kind,'none');break;
     case 'equip':ok=equipItem(draft,command.kind,command.item);break;
     case 'goal':ok=setGoal(draft,command.points);break;
     case 'rename':{

@@ -1,4 +1,4 @@
-const views=new Set(['lobby','inventory','cards','season','profile','shop','xsuit','lab','vehicle','companion','character']);
+const views=new Set(['welcome','create','intro','guide','wow','rookie','lobby','inventory','cards','season','profile','shop','xsuit','lab','vehicle','companion','character']);
 const oneOf=(v,list,fallback)=>list.includes(v)?v:fallback;
 export function parseRoute(hash=''){
  let parts;try{parts=decodeURIComponent(hash.replace(/^#\/?/,'')).split('/');}catch{parts=hash.replace(/^#\/?/,'').split('/');}
@@ -15,6 +15,8 @@ export function routeHash(route){
  return '#'+route.view+(sub?'/'+sub:'');
 }
 export function parentRoute(route){
+ if(route.view==='create'||route.view==='guide')return {view:'welcome'};
+ if(route.view==='intro')return {view:'intro'};
  if(route.view==='cards' && route.tab==='detail')return {view:'cards',tab:'overview'};
  if(route.view==='season' && route.tab==='goals')return {view:'season',season:route.season,tab:'overview'};
  return {view:'lobby'};

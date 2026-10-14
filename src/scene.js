@@ -1,3 +1,4 @@
+import {faceTones,hairColors} from './player.js';
 // Small dependency-free WebGL showroom. Original procedural geometry, not PUBG assets.
 const V=(x,y,z)=>[x,y,z];
 const sub=(a,b)=>a.map((x,i)=>x-b[i]), dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0), cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], norm=a=>{let n=Math.hypot(...a)||1;return a.map(x=>x/n)};
@@ -15,19 +16,51 @@ class Mesh {
  beam(a,b,r,col){let d=sub(b,a),len=Math.hypot(...d);let u=norm(cross(norm(d),Math.abs(d[1]/len)>.9?[1,0,0]:[0,1,0])),v=norm(cross(norm(d),u));for(let i=0;i<8;i++){let q=[];for(let [p,t] of [[a,i],[a,i+1],[b,i+1],[b,i]]){let angle=t/8*Math.PI*2;q.push(p.map((x,k)=>x+r*(u[k]*Math.cos(angle)+v[k]*Math.sin(angle))));}this.tri(q[0],q[1],q[2],col);this.tri(q[0],q[2],q[3],col);}}
 }
 function rifle(m,p=[0,0,0],c='#984de0',scale=1){let old=m.origin;m.origin=old.map((x,i)=>x+p[i]);const b=(p,s,c2=c)=>m.box(p.map(x=>x*scale),s.map(x=>x*scale),c2);b([0,0,0],[1,.15,.16]);b([-.65,-.01,0],[.42,.2,.12]);b([.65,.01,0],[.45,.055,.065],'#3b3f50');b([.9,.01,0],[.08,.085,.085],'#d6b65f');b([.02,-.19,0],[.17,.32,.13],'#cfc9d9');b([-.27,-.18,0],[.1,.25,.12]);b([.13,.12,0],[.36,.045,.08],'#d4b35d');for(let i=0;i<4;i++)b([-.35+i*.2,.01,.085],[.08,.055,.01],'#e3c2fa');m.origin=old;}
-function avatar(m,o,time){let skin='#d8af91',gold='#c4a45a',white=o.color||'#ece6d5',blue=o.accent||'#436fc6';let male=o.character==='victor';
+function avatarHead(m,o,skin,male,accent,gold){
+ const face=Number.isInteger(o.face)?o.face:0,hair=Number.isInteger(o.hair)?o.hair:0,hairColor=hairColors[o.hairColor]||'#292c31';
+ const width=(male?.195:.17)+(face%3-.5)*.007;
+ m.sphere([0,2.18,0],[width,.23,.16],skin);m.sphere([0,2.17,.12],[width*.84,.173,.076],skin);
+ if(hair!==6){
+  m.sphere([0,2.3,-.055],[width+.015,hair===4?.095:.17,.16],hairColor);
+  if(hair!==4)m.box([0,2.32,.105],[width*1.65,.065,.07],hairColor,-.06);
+ }
+ if([0,2,5,7,8].includes(hair))for(const side of [-1,1])m.sphere([side*(width+.004),hair===5?2.05:2.16,-.04],[.045,hair===5?.3:.13,.08],hairColor);
+ if(hair===1){m.sphere([0,2.25,-.22],[.07,.07,.07],hairColor);m.sphere([0,2.04,-.28],[.075,.23,.08],hairColor);}
+ if(hair===2)for(const side of [-1,1])for(let i=0;i<3;i++)m.sphere([side*(width+.035),2.17-i*.08,-.08],[.068,.068,.065],hairColor,10,7);
+ if(hair===3)for(let i=0;i<10;i++){const a=i/10*Math.PI*2;m.sphere([Math.cos(a)*.14,2.35+Math.sin(a)*.035,-.015+Math.sin(a)*.1],[.075,.085,.075],hairColor,8,6);}
+ if(hair===7)for(let i=0;i<6;i++)m.sphere([.12,2.13-i*.075,-.16],[.038,.048,.04],hairColor,8,6);
+ if(hair===8)m.sphere([-.09,2.31,.13],[.125,.095,.025],hairColor);
+ for(const x of [-.058,.058]){m.sphere([x,2.205,.183],[.027,.012,.009],'#eeeeed',8,6);m.sphere([x,2.204,.193],[.009,.012,.004],'#283238',8,6);m.box([x,2.239,.179],[.052,.009,.01],hairColor,x>0?.08:-.08);}
+ m.sphere([0,2.155,.193],[.022,.031,.025],skin,8,6);m.box([0,2.103,.19],[.051,.011,.008],'#a77069');
+ for(const x of [-width,width])m.sphere([x,2.155,0],[.025,.049,.028],skin,8,6);
+ if(!o.starter&&o.outfit!=='none'){m.cone([0,2.31,-.01],width+.015,width,.045,gold);m.sphere([0,2.31,.179],[.032,.039,.012],accent,8,6);}
+}
+function starterAvatar(m,o){
+ const skin=faceTones[o.face]||faceTones[0],color=o.color||'#eaf3f1',accent=o.accent||'#50acda',male=o.character==='victor'||o.gender==='male';
+ const basic=o.outfit==='none',hoodie=o.outfit==='hoodie',cadet=o.outfit==='cadet';
+ for(const x of [-.19,.19]){m.sphere([x,.88,0],[.112,.44,.13],skin);m.sphere([x,.36,.01],[.085,.34,.095],skin);m.box([x,.08,.08],[.18,.12,.28],basic?'#737b72':accent);
+  if(!basic&&!cadet)for(let i=0;i<6;i++)m.cone([x,.2+i*.058,.01],.09,.09,.056,hoodie?'#443342':i%2===0?'#e6eee8':accent,12);
+ }
+ m.sphere([0,1.36,0],[male?.31:.28,.19,.19],color);m.cone([0,1.64,0],.235,male?.32:.28,.5,color);m.cone([0,1.95,0],.09,.09,.15,skin);
+ avatarHead(m,{...o,starter:true},skin,male,accent,'#c4a45a');
+ for(const side of [-1,1]){const shoulder=[side*.31,1.84,0],elbow=[side*.42,1.5,.02],hand=[side*.48,1.22,.1];m.sphere(shoulder,[.13,.13,.12],color);m.beam(shoulder,elbow,.074,hoodie?color:skin);m.beam(elbow,hand,.06,hoodie?color:skin);m.sphere(hand,[.06,.077,.043],skin);
+  if(hoodie)m.box([side*.385,1.67,0],[.14,.26,.14],color,side*.15);
+ }
+ if(basic||cadet||hoodie){for(const x of [-.15,.15])m.box([x,1.17,0],[.27,.31,.24],cadet?'#364a44':basic?'#677970':color);}
+ else{m.cone([0,1.13,0],.43,.26,.38,'#e5eeea',18);m.box([0,1.48,.206],[.13,.28,.035],accent);for(const side of [-1,1])m.box([side*.145,1.52,.209],[.17,.11,.04],accent,side*.4);m.sphere([0,1.49,.235],[.045,.05,.02],accent,8,6);m.box([0,1.31,-.23],[.27,.17,.03],accent);}
+ if(hoodie){m.cone([0,1.87,0],.29,.17,.1,accent);m.box([0,1.49,.207],[.025,.39,.02],'#eee7ea');m.sphere([.18,1.28,.22],[.11,.12,.065],'#efe6e4');}
+ if(cadet){m.box([0,1.66,.175],[.43,.34,.105],'#40564c');for(const x of [-.125,.125])m.box([x,1.55,.235],[.1,.15,.06],accent);m.cone([0,1.38,0],.255,.255,.065,accent);}
+ if(o.weapon!=='none')rifle(m,[.39,1.43,.29],o.weaponColor||'#807054',.64);
+}
+function avatar(m,o,time){if(o.starter||o.outfit==='none'){starterAvatar(m,o);return;}let skin=faceTones[o.face]||'#d8af91',gold='#c4a45a',white=o.color||'#ece6d5',blue=o.accent||'#436fc6';let male=o.character==='victor'||o.gender==='male';
  // Stylized articulated mannequin with layered cloth and metallic accessories.
  for(let x of [-.19,.19]){m.sphere([x,.87,0],[.12,.45,.13],skin);m.sphere([x,.35,.025],[.085,.34,.09],skin);m.box([x,.12,.07],[.17,.13,.29],blue);for(let y of [.19,.32,.48])m.cone([x,y,.025],.088,.088,.04,gold,10);}
  m.sphere([0,1.34,0],[.3,.2,.19],white);m.cone([0,1.63,0],.22,.3,.5,white);m.cone([0,1.42,0],.24,.24,.075,gold);m.cone([0,1.96,0],.1,.1,.15,skin);
- m.sphere([0,2.18,0],[male?.19:.17,.235,.165],skin);m.sphere([0,2.25,-.05],[.182,.2,.16],'#242735');m.sphere([0,2.17,.12],[.147,.178,.075],skin);
- for(let x of [-.058,.058]){m.sphere([x,2.205,.183],[.028,.012,.009],'#eeeeed',8,6);m.sphere([x,2.204,.193],[.009,.012,.004],'#283238',8,6);m.box([x,2.239,.179],[.053,.009,.01],'#363038',x>0?.08:-.08);}
- m.sphere([0,2.154,.193],[.023,.033,.026],skin,8,6);m.box([0,2.103,.189],[.052,.011,.008],'#a77069');
- m.cone([0,2.31,-.01],.182,.168,.055,gold);m.sphere([0,2.31,.177],[.032,.04,.012],blue,8,6);
- if(!male){for(let x of [-.166,.166]){m.sphere([x,1.99,-.09],[.056,.24,.06],'#292b37');m.sphere([x,2.12,.025],[.022,.046,.02],gold,8,6);}}
+ avatarHead(m,o,skin,male,blue,gold);
  for(let side of [-1,1]){let shoulder=[side*.31,1.85,0],elbow=[side*.41,1.53,.015],hand=[side*.48,1.22,.07];m.sphere(shoulder,[.14,.15,.13],white);m.beam(shoulder,elbow,.073,skin);m.beam(elbow,hand,.055,skin);m.sphere(hand,[.06,.08,.04],skin);m.cone([side*.365,1.7,.009],.08,.08,.08,gold);m.box([side*.4,1.44,-.08],[.17,.53,.035],blue,side*.12);}
  if(!male){for(let side of [-1,1]){m.box([side*.29,1.02,-.06],[.2,.68,.06],white,side*.2);m.box([side*.22,.98,-.13],[.15,.77,.045],blue,side*.1);}m.box([0,1.13,.197],[.16,.56,.028],blue);m.box([0,1.14,.216],[.025,.55,.01],gold);}
  m.cone([0,1.9,0],.31,.15,.12,gold);m.sphere([0,1.74,.21],[.04,.052,.025],blue,8,6);
- rifle(m,[.39,1.43,.29],o.weaponColor||'#984de0',.64);
+ if(o.weapon!=='none')rifle(m,[.39,1.43,.29],o.weaponColor||'#984de0',.64);
  if(o.suit){m.cone([0,.03,0],.8,.75,.08,gold);for(let side of [-1,1])for(let i=0;i<4;i++){let x=side*(.7+i*.09);m.beam([x,.2+i*.25,-.2],[x+side*.16,.65+i*.25,-.1],.022,blue);}}
 }
 function vehicle(m,o){let c=o.color||'#cba44b',dark='#26303c';let type=o.vehicle||'buggy';for(let x of [-.62,.62])for(let z of [-.75,.75]){m.sphere([x,.3,z],[.18,.31,.31],dark);m.sphere([x*1.18,.3,z],[.015,.21,.21],c);m.sphere([x*1.205,.3,z],[.016,.08,.08],'#aeb5bd');}m.box([0,.39,0],[1.1,.22,1.8],c);m.box([0,.61,-.55],[1.03,.29,.65],c);m.box([0,.63,.66],[.97,.23,.48],c);m.box([0,.67,.03],[.8,.16,.6],dark);for(let x of [-.23,.23])m.box([x,.84,-.14],[.34,.44,.13],dark);
@@ -121,16 +154,16 @@ export class Scene {
    if(!data){const mesh=new Mesh();environment(mesh,o.type);data=new Float32Array(mesh.data);this.environmentCache.set(o.type,data);}
    gl.bindBuffer(gl.ARRAY_BUFFER,this.backgroundBuffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);this.backgroundCount=data.length/9;this.backgroundKey=o.type;
   }
-  const key=JSON.stringify([o.type,o.color,o.accent,o.character,o.weaponColor,o.vehicle,o.companion,o.stage]);
+  const key=JSON.stringify([o.type,o.color,o.accent,o.character,o.weaponColor,o.weapon,o.vehicle,o.companion,o.stage,o.starter,o.outfit,o.gender,o.face,o.hair,o.hairColor]);
   if(this.modelKey===key)return;
   const m=new Mesh();
-  if(o.type==='vehicle')vehicle(m,o);
+  if(o.type==='vehicle'){if(o.vehicle!=='none')vehicle(m,o);}
   else if(o.type==='lab'){
-   m.origin=[0,1.3,0];rifle(m,[0,0,0],o.weaponColor,1.65);
+   m.origin=[0,1.3,0];if(o.weapon!=='none')rifle(m,[0,0,0],o.weaponColor,1.65);
    if(o.stage>=3){m.origin=[0,0,0];m.cone([0,.02,0],1.9,1.9,.04,'#b99852',40);}
   }else{
    avatar(m,{...o,suit:o.type==='xsuit'},0);
-   if(o.type==='lobby'){m.origin=[-1.7,0,-.2];m.turn=.75;vehicle(m,{vehicle:'buggy'});}
+   if(o.type==='lobby'&&o.vehicle!=='none'){m.origin=[-1.7,0,-.2];m.turn=.75;vehicle(m,{vehicle:'buggy'});}
    if(o.companion&&o.companion!=='none'){m.origin=[.8,0,.3];m.turn=0;pet(m,o.companion);}
   }
   gl.bindBuffer(gl.ARRAY_BUFFER,this.modelBuffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.data),gl.STATIC_DRAW);this.modelCount=m.data.length/9;this.modelKey=key;
@@ -148,7 +181,7 @@ export class Scene {
   const sky=o.type==='lobby'?[.39,.47,.52]:o.type==='xsuit'?[.16,.26,.24]:[.085,.12,.17];
   gl.clearColor(...sky,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.pr);this.geometry();
   let distance=(o.type==='lobby'?5.8:o.type==='vehicle'?5.9:o.type==='lab'?6.2:5)*this.zoom;
-  const aspect=w/h;distance*=Math.max(1,.95/aspect);const targetX=aspect<1?0:o.type==='lobby'?.25:.55;
+  const aspect=w/h;distance*=Math.max(1,.95/aspect);const portrait=window.innerHeight>window.innerWidth;const targetX=o.type==='create'?(portrait?0:-1.1):aspect<1?0:o.type==='lobby'?.25:.55;
   gl.uniformMatrix4fv(this.vp,false,camera([targetX,2.25,distance],[targetX,1.23,0],aspect));gl.uniform3fv(this.sky,sky);
   this.bind(this.backgroundBuffer);gl.uniform1f(this.turn,0);gl.drawArrays(gl.TRIANGLES,0,this.backgroundCount);
   this.bind(this.modelBuffer);gl.uniform1f(this.turn,this.angle+(motion?Math.sin(now*.0005)*.018:0));gl.drawArrays(gl.TRIANGLES,0,this.modelCount);

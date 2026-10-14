@@ -26,7 +26,7 @@ for(const id of ['app','screen-root','modal-root','scene','toast','grid','modal-
 const app=nodes.get('app'),canvas=nodes.get('scene');canvas.clientWidth=900;canvas.clientHeight=500;
 const gl=new Proxy({getShaderParameter:()=>true,getProgramParameter:()=>true,getAttribLocation:()=>0},{get:(o,k)=>k in o?o[k]:(/^[A-Z_]+$/.test(k)?1:()=>({}))});canvas.getContext=()=>gl;
 globalThis.document={hidden:false,body:new Element('body',''),activeElement:new Element('body',''),querySelector:s=>nodes.get(s.replace('#','')),getElementById:id=>nodes.get(id),createElement:()=>new Element('new'),createTextNode:t=>t,addEventListener(){},removeEventListener(){}};
-let saved=null;
+let saved=JSON.stringify({version:2,name:'EXISTING_PLAYER'});
 globalThis.window={devicePixelRatio:1,location:{hash:'#lobby'},localStorage:{getItem:()=>saved,setItem:(key,value)=>saved=value},matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>windowEvents[name]=fn,removeEventListener(){},history:{pushState(data,title,hash){window.location.hash=hash;},replaceState(data,title,hash){window.location.hash=hash;}}};
 globalThis.CSS={escape:s=>s};globalThis.requestAnimationFrame=fn=>{raf.push(fn);return raf.length;};globalThis.cancelAnimationFrame=()=>{};
 const tick=()=>{const work=raf.splice(0);for(const fn of work)fn(performance.now()+100);};
